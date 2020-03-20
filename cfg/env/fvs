@@ -1,0 +1,5 @@
+# 文件服务的端口
+# FVS_SERVER_PORT = 36336
+
+# 文件服务的根目录
+# FVS_EXCHANGE_ROOT = /var/lib/filesvr/exchange

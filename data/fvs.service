@@ -1,0 +1,17 @@
+[Unit]
+Description=File Viewer Server Daemon
+Documentation=
+After=network.target 
+Wants=
+
+[Service]
+EnvironmentFile=/etc/sysconfig/fvs/env
+ExecStart=fvs
+ExecReload=/bin/kill -HUP $MAINPID
+Type=simple
+KillMode=process
+Restart=on-failure
+RestartSec=42s
+
+[Install]
+WantedBy=multi-user.target
