@@ -1,0 +1,106 @@
+#!/bin/sh
+
+APP_NAME="fvs"
+
+MODE_OF_INSTALL="0"
+MODE_OF_UNINSTALL="1"
+MODE_DEF="${MODE_OF_INSTALL}"
+
+CONFIGURATION_PATH=""
+DAEMON_NAME="${APP_NAME}d"
+DAEMON_SERVICE_CFG_PATH="/usr/lib/systemd/system/${DAEMON_NAME}.service"
+
+PROFILE_PATH="/etc/sysconfig/${APP_NAME}/app.cfg"
+
+show_usage(){
+cat <<EOF
+Usage:
+  $(basename $0)
+Option:
+  -h,--help               Print usage
+  -u,--uninstall          Remove
+  -e,--env                Specify virtualenv profile  
+  -c,--cfg                Specify configuration profile
+EOF
+}
+
+start_serve() {
+echo "Start serve..."
+# cat <<EOF >${DAEMON_SERVICE_CFG_PATH}
+cat <<EOF
+[Unit]
+Description=File Viewer Server Daemon
+Documentation=
+After=network.target 
+Wants=
+
+[Service]
+$(for e in ${ENV_FILES}; do echo "EnvironmentFile=$e"; done)
+ExecStart=${APP_NAME} -c ${PROFILE_PATH}
+ExecReload=/bin/kill -HUP $MAINPID
+Type=simple
+KillMode=process
+Restart=on-failure
+RestartSec=42s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+if [ "0" != "$(systemctl list-unit-files | grep ${DAEMON_NAME} | wc -l)" ]
+then
+    systemctl stop ${DAEMON_NAME}.service
+    systemctl reload ${DAEMON_NAME}.service
+    systemctl start ${DAEMON_NAME}.service
+else
+    systemctl enable --now ${DAEMON_NAME}.service
+    systemctl start ${DAEMON_NAME}.service
+fi
+}
+
+stop_serve() {
+echo "Stop serve..."
+if [ "0" != "$(systemctl list-unit-files | grep ${DAEMON_NAME} | wc -l)" ]
+then
+    systemctl stop ${DAEMON_NAME}.service
+    systemctl disable ${DAEMON_NAME}.service
+
+    if [ -e ${DAEMON_SERVICE_CFG_PATH} ]
+    then
+        rm -f ${DAEMON_SERVICE_CFG_PATH}
+    fi
+fi
+}
+
+OPTIONS=$(getopt -o hue:c: -al help,uninstall,venv:,cfg: -n "$0 -h" -s sh -- "$@")
+eval set -- "$OPTIONS"
+while [ -n "$1" ]
+do
+  case "$1" in
+    -h|--help)
+      show_usage
+      shift;exit 0
+    ;;
+    -u|--uninstall)
+      MODE_DEF="${MODE_OF_UNINSTALL}"
+      shift
+    ;;
+    -c|--cfg)
+      CONFIGURATION_PATH="$2"
+      shift 2
+    ;;
+    -e|--venv)
+      ENV_FILES="$2 ${ENV_FILES}"
+      shift 2
+    ;;
+    --)
+      shift
+    ;;
+    *) 
+      shift
+    ;;
+  esac 
+done
+
+if [ "$MODE_DEF" == "$MODE_OF_INSTALL" ]; then start_serve; fi
+if [ "$MODE_DEF" == "$MODE_OF_UNINSTALL" ]; then stop_serve; fi

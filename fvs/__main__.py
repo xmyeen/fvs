@@ -2,24 +2,11 @@
 #coding:utf-8 
 
 from enum import Enum
-import cgi
-import http.server
-import mimetypes
-import os
-import platform
-import posixpath
-import re
-import shutil
-import socket
-import subprocess
-import sys
-import threading
-import time
-import urllib.error
-import urllib.parse
-import urllib.request
-import uuid
+import warnings,os,platform,sys,time,re,shutil,threading,subprocess,uuid,posixpath,socket,configparser,getopt
 from socketserver import ThreadingMixIn
+import http.server,cgi,mimetypes
+import urllib.error,urllib.parse,urllib.request
+
 
 try:
     import numpy as np
@@ -43,12 +30,18 @@ try:
 except ImportError:
     from io import StringIO
 
-class EnvDefs(Enum):
-    FVS_SERVER_PORT = 1
-    FVS_EXCHANGE_ROOT = 2
 
-class GetWanIp:
-    def getip(self):
+origin_settings = dict(
+    host = "0.0.0.0",
+    port = "36666",
+    external_address = None,
+    config = os.path.join(sys.prefix, 'config', 'app.cfg'),
+    exchange_dir = os.path.join(os.getcwd(), ".exch")
+)
+
+class Util(object):
+    @staticmethod
+    def getip():
         match_ip_dict = {}
         ipconfig_result_list = os.popen('ipconfig').readlines()
         for i in range(0, len(ipconfig_result_list)):
@@ -62,71 +55,82 @@ class GetWanIp:
         for i in ip_dict:
             return ip_dict[i]
 
-    def visit(self, url):
+    @staticmethod
+    def visit(url):
         opener = urllib.request.urlopen(url, None, 3)
         if url == opener.geturl():
             str = opener.read()
         return re.search(r'(\d+\.){3}\d+', str).group(0)
 
+    @staticmethod
+    def sizeof_fmt(num):
+        for x in ['bytes', 'KB', 'MB', 'GB']:
+            if num < 1024.0:
+                return "%3.1f%s" % (num, x)
+            num /= 1024.0
+        return "%3.1f%s" % (num, 'TB')
 
-def showTips():
-    print("")
-    print('----------------------------------------------------------------------->> ')
-    try:
-        port = int(os.environ.get(EnvDefs.FVS_SERVER_PORT.name))
-    except Exception as e:
-        print('-------->> 警告:端口未给出，将使用默认端口: 8080 ')
-        print('-------->> 如需使用其他端口，请执行: ')
-        print('-------->> python HTTPServerWithUpload.py port ')
-        print("-------->> port是一个整数，它的范围是: 1024 < port < 65535 ")
-        port = 8080
+    @staticmethod
+    def modification_date(filename):
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(filename)))
 
-    if not 1024 < port < 65535:
-        port = 8080
-    print('-------->> 现在，在监听 ' + str(port) + ' 端口 ...')
-    osType = platform.system()
-    data = 'http://127.0.0.1:' + str(port)
-    if osType == "Windows":
-        print('-------->> 您可以访问地址URL:http://' +
-              GetWanIp().getip() + ':' + str(port))
-        data = 'http://'+GetWanIp().getip() + ':' + str(port)
-    else:
-        print('-------->> 您可以访问地址URL:http://127.0.0.1:' + str(port))
-    print('-------->> 或扫描此二维码: ')
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=1,
-        border=1
-    )
-    qr.add_data(data)
-    qr.make(fit=True)
-    img = qr.make_image()
-    img2 = np.array(img.convert('L'))
-    d = {255: '@@', 0: '  '}
-    rows, cols = img2.shape
-    for i in range(rows):
-        for j in range(cols):
-            print(d[img2[i, j]], end='')
-        print('')
-    print('----------------------------------------------------------------------->> ')
-    return ('', port)
+class Profile(object):
+    def __init__(self):
+        for name,val in origin_settings.items():
+            setattr(self, name, val)
+
+        self.serveraddr = self.show_tips()
+
+    def show_tips(self):
+        try:
+            port = int(self.port)
+            if not 1024 < port < 65535:
+                raise RuntimeError(f"Out of range: 1024 < port < 65535")
+        except ValueError:
+            # print(value1, ..., sep=' ', end='\n', file=sys.stdout, flush=False)
+            print("The 'port' argument must be an integer", file=sys.stderr)
+            sys.exit(1)
+        except Exception as e:
+            print(f"{e}", file=sys.stderr)
+            sys.exit(1)
+
+        if not self.host:
+            if platform.system() == "windows".lower():
+                self.host = Util.getip()
+
+        iu = f'http://{self.host}:{str(port)}'
+        eu = iu if not self.external_address else f'http://{self.external_address}'
+        print(f"Listen to '{iu}'")
 
 
-serveraddr = showTips()
+        print(f"Now, you can go to visit '{eu}' or scan the following QR code")
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=1,
+            border=1
+        )
+        qr.add_data(eu)
+        qr.make(fit=True)
+        img = qr.make_image()
+        img2 = np.array(img.convert('L'))
+        d = {255: '@@', 0: '  '}
+        rows, cols = img2.shape
+        for i in range(rows):
+            for j in range(cols):
+                print(d[img2[i, j]], end='')
+            print('')
+        return (self.host, port)
 
+class ThreadingServer(ThreadingMixIn, http.server.HTTPServer):
+    @classmethod
+    def create_server(cls, profile, server):
+        cls.__profile = profile
+        return ThreadingServer(cls.get_profile('serveraddr'), server)
 
-def sizeof_fmt(num):
-    for x in ['bytes', 'KB', 'MB', 'GB']:
-        if num < 1024.0:
-            return "%3.1f%s" % (num, x)
-        num /= 1024.0
-    return "%3.1f%s" % (num, 'TB')
-
-
-def modification_date(filename):
-    return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(os.path.getmtime(filename)))
-
+    @classmethod
+    def get_profile(cls, key, default_value = None):
+        return getattr(cls.__profile, key, default_value)
 
 class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -253,8 +257,11 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         return f
 
-    def get_work_directory(self):
-        return os.environ.get(EnvDefs.FVS_EXCHANGE_ROOT.name, os.path.join(os.getcwd(), 'exchange'))
+    def get_exchange_diretory(self):
+        p = ThreadingServer.get_profile("exchange_dir")
+        if not os.path.exists(p):
+            os.makedirs(p)
+        return p
 
     def list_directory(self, path):
         try:
@@ -289,10 +296,10 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             if os.path.islink(fullname):
                 colorName = '<span style="background-color: #FFBFFF;">' + name + '@</span>'
                 displayname = name
-            filename = os.path.join(self.get_work_directory(), displaypath + displayname)
+            filename = os.path.join(self.get_exchange_diretory(), displaypath + displayname)
             f.write('<table><tr><td width="60%%"><a href="%s">%s</a></td><td width="20%%">%s</td><td width="20%%">%s</td></tr>\n'
                     % (urllib.parse.quote(linkname), colorName,
-                        sizeof_fmt(os.path.getsize(filename)), modification_date(filename)))
+                        Util.sizeof_fmt(os.path.getsize(filename)), Util.modification_date(filename)))
         f.write("</table>\n<hr>\n</body>\n</html>\n")
         length = f.tell()
         f.seek(0)
@@ -308,7 +315,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         path = posixpath.normpath(urllib.parse.unquote(path))
         words = path.split('/')
         words = [_f for _f in words if _f]
-        path = self.get_work_directory()
+        path = self.get_exchange_diretory()
         for word in words:
             drive, word = os.path.splitdrive(word)
             head, word = os.path.split(word)
@@ -341,22 +348,53 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         '.h': 'text/plain',
     })
 
+def show_usage():
+    print(f'''
+    Usage: {sys.argv[0]} [OPTION]...
+    Launch file viewer server
 
-class ThreadingServer(ThreadingMixIn, http.server.HTTPServer):
-    pass
+    Options:
+      -c,--config=<path>  The configuration file
+      -v,--version        Show version
+    ''')
 
+def show_version():
+    import pkg_resources
+    print(pkg_resources.get_distribution("construct").version)
 
-def test(HandlerClass=SimpleHTTPRequestHandler,
-         ServerClass=http.server.HTTPServer):
+def test(HandlerClass=SimpleHTTPRequestHandler, ServerClass=http.server.HTTPServer):
     http.server.test(HandlerClass, ServerClass)
 
-def setup():
+def main():
     try:
-        srvr = ThreadingServer(serveraddr, SimpleHTTPRequestHandler)
+        opts,args = getopt.getopt(sys.argv[1:],'-h-v-c:',['help', 'version', 'config='])
+        for opt,optval in opts:
+            if opt in ('-h','--help'):
+                show_usage()
+                sys.exit()
+            if opt in ('-v','--version'):
+                show_version()
+                sys.exit()
+            if opt in ('-c','--config'):
+                origin_settings.update(config = optval)
+
+        if os.path.exists(origin_settings.get('config')):
+            parser = configparser.ConfigParser()
+            parser.read(origin_settings.get('config'), encoding='utf-8')
+
+            if parser.has_section('common'):
+                print( parser.items(section='common'))
+                for k,v in parser.items(section='common'):
+                    origin_settings.update({ k : v.strip()})
+
+        srvr = ThreadingServer.create_server(
+            Profile(),
+            SimpleHTTPRequestHandler
+        )
         srvr.serve_forever()
     except KeyboardInterrupt:
         print("Done!")
 
 
 if __name__ == '__main__':
-    setup()
+    main()
