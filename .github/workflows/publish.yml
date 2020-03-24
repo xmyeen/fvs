@@ -1,5 +1,5 @@
 on:
-  pull_request:
+  push:
     branches:
     - 1.0.0
     
@@ -19,3 +19,10 @@ jobs:
     - name: Build and publish
       run: |
         sh setup.sh
+    - name: Upload artifact
+      uses: actions/upload-artifact@v1.0.0
+      with:
+        # Artifact name
+        name: fvs
+        # Directory containing files to upload
+        path: .dist/*
