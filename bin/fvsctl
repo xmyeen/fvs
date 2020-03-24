@@ -1,16 +1,21 @@
 #!/bin/sh
 
+CURR_SCRIPT_DIR="$(cd `dirname $0`; pwd)"
+
 APP_NAME="fvs"
 
 MODE_OF_INSTALL="0"
 MODE_OF_UNINSTALL="1"
 MODE_DEF="${MODE_OF_INSTALL}"
 
-CONFIGURATION_PATH=""
 DAEMON_NAME="${APP_NAME}d"
 DAEMON_SERVICE_CFG_PATH="/usr/lib/systemd/system/${DAEMON_NAME}.service"
 
-PROFILE_PATH="/etc/sysconfig/${APP_NAME}/app.cfg"
+ENV_FILES=""
+
+ORIGIN_PROFILE_PATH="${CURR_SCRIPT_DIR}/../config/app.cfg"
+PROFILE_ROOT="/etc/sysconfig/${APP_NAME}"
+PROFILE_PATH="${PROFILE_ROOT}/app.cfg"
 
 show_usage(){
 cat <<EOF
@@ -18,6 +23,7 @@ Usage:
   $(basename $0)
 Option:
   -h,--help               Print usage
+  -i,--install            Install
   -u,--uninstall          Remove
   -e,--env                Specify virtualenv profile  
   -c,--cfg                Specify configuration profile
@@ -25,9 +31,18 @@ EOF
 }
 
 start_serve() {
+profile="${ORIGIN_PROFILE_PATH}"
+if [ -f "${ORIGIN_PROFILE_PATH}" ]&&[ ! -f "${PROFILE_PATH}" ]
+then
+  mkdir -p ${PROFILE_ROOT} &&
+  cp -f ${ORIGIN_PROFILE_PATH} ${PROFILE_ROOT} &&
+  profile="${PROFILE_PATH}"
+fi
+
+METHOD="$(systemctl list-unit-files | grep ${DAEMON_NAME} | wc -l)"
+
 echo "Start serve..."
-# cat <<EOF >${DAEMON_SERVICE_CFG_PATH}
-cat <<EOF
+cat <<EOF >${DAEMON_SERVICE_CFG_PATH}
 [Unit]
 Description=File Viewer Server Daemon
 Documentation=
@@ -36,23 +51,25 @@ Wants=
 
 [Service]
 $(for e in ${ENV_FILES}; do echo "EnvironmentFile=$e"; done)
-ExecStart=${APP_NAME} -c ${PROFILE_PATH}
+ExecStart=${CURR_SCRIPT_DIR}/${APP_NAME} -c ${profile}
 ExecReload=/bin/kill -HUP $MAINPID
 Type=simple
 KillMode=process
 Restart=on-failure
-RestartSec=42s
+RestartSec=60s
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-if [ "0" != "$(systemctl list-unit-files | grep ${DAEMON_NAME} | wc -l)" ]
+if [ "0" != "$METHOD" ]
 then
+    echo "Update ${DAEMON_NAME} ..."
     systemctl stop ${DAEMON_NAME}.service
     systemctl reload ${DAEMON_NAME}.service
     systemctl start ${DAEMON_NAME}.service
 else
+    echo "Add ${DAEMON_NAME} ..."
     systemctl enable --now ${DAEMON_NAME}.service
     systemctl start ${DAEMON_NAME}.service
 fi
@@ -69,6 +86,8 @@ then
     then
         rm -f ${DAEMON_SERVICE_CFG_PATH}
     fi
+
+    rm -rf ${PROFILE_ROOT}
 fi
 }
 
@@ -81,12 +100,16 @@ do
       show_usage
       shift;exit 0
     ;;
+    -i|--install)
+      MODE_DEF="${MODE_OF_INSTALL}"
+      shift
+    ;;
     -u|--uninstall)
       MODE_DEF="${MODE_OF_UNINSTALL}"
       shift
     ;;
     -c|--cfg)
-      CONFIGURATION_PATH="$2"
+      ORIGIN_PROFILE_PATH="$2"
       shift 2
     ;;
     -e|--venv)
