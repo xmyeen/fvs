@@ -91,7 +91,7 @@ then
 fi
 }
 
-OPTIONS=$(getopt -o hue:c: -al help,uninstall,venv:,cfg: -n "$0 -h" -s sh -- "$@")
+OPTIONS=$(getopt -o hue:c: -al help,uninstall,env:,cfg: -n "$0 -h" -s sh -- "$@")
 eval set -- "$OPTIONS"
 while [ -n "$1" ]
 do
@@ -112,7 +112,7 @@ do
       ORIGIN_PROFILE_PATH="$2"
       shift 2
     ;;
-    -e|--venv)
+    -e|--env)
       ENV_FILES="$2 ${ENV_FILES}"
       shift 2
     ;;
