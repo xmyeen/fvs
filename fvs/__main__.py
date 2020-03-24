@@ -4,8 +4,9 @@
 from enum import Enum
 import warnings,os,platform,sys,time,re,shutil,threading,subprocess,uuid,posixpath,socket,configparser,getopt
 from socketserver import ThreadingMixIn
-import http.server,cgi,mimetypes
+import http.server,six,mimetypes,html
 import urllib.error,urllib.parse,urllib.request
+
 
 
 try:
@@ -271,7 +272,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             return None
         list.sort(key=lambda a: a.lower())
         f = StringIO()
-        displaypath = cgi.escape(urllib.parse.unquote(self.path))
+        displaypath = html.escape(urllib.parse.unquote(self.path))
         f.write('<!DOCTYPE html>')
         f.write('<meta name="viewport" content="width=device-width" charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">')
         f.write("<html>\n<title>内网传输</title>\n")
@@ -296,7 +297,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             if os.path.islink(fullname):
                 colorName = '<span style="background-color: #FFBFFF;">' + name + '@</span>'
                 displayname = name
-            filename = os.path.join(self.get_exchange_diretory(), displaypath + displayname)
+            filename = os.path.join(self.get_exchange_diretory(), displayname)
             f.write('<table><tr><td width="60%%"><a href="%s">%s</a></td><td width="20%%">%s</td><td width="20%%">%s</td></tr>\n'
                     % (urllib.parse.quote(linkname), colorName,
                         Util.sizeof_fmt(os.path.getsize(filename)), Util.modification_date(filename)))
