@@ -15,7 +15,6 @@ Summary: File Viewer Server
 %description
 File Viewer Server
 
-
 %define app_root %{_prefix}/local/lib/%{name}
 %define cfg_root %{_sysconfdir}/sysconfig/%{name}
 %define venv_root %{app_root}/.venv
@@ -42,7 +41,11 @@ pycmd=""
 
 for rcfile in %{getenv:HOME}/.bashrc
 do
-    if [ -f "$rcfile" ];then source $rcfile; fi
+    if [ -f "$rcfile" ]
+    then
+        echo "Load environment file: $rcfile"
+        source $rcfile
+    fi
     for c in ${py_checking_paths}
     do
         type ${c} >/dev/null 2>&1 &&
@@ -62,13 +65,13 @@ fi
 
 echo "Install %{name}, now"
 
-${pycmd} -m venv %{venv_root}
+${pycmd} -m venv --clean %{venv_root}
 source %{venv_root}/bin/activate
 pip install -U --force-reinstall --no-index --pre --find-links=%{rc_root} %{name}
 pip freeze > %{app_root}/reqirements.txt
+type %{deamon_cmd} >/dev/null 2>&1 &&
+%{deamon_cmd} -i
 deactivate
-
-type %{deamon_cmd} >/dev/null 2>&1 && %{deamon_cmd} --env %{venv_root} -i
 
 %clean
 
@@ -76,7 +79,12 @@ type %{deamon_cmd} >/dev/null 2>&1 && %{deamon_cmd} --env %{venv_root} -i
 
 %postun
 if [ "$1" = "0" ] ; then
-    type %{deamon_cmd} >/dev/null 2>&1 || %{deamon_cmd} -u
+    if [ -f "%{venv_root}/bin/%{deamon_cmd}" ]
+    then
+        source %{venv_root}/bin/activate
+        %{deamon_cmd} -u
+        deactivate
+    fi
 
     for d in %{app_root} %{cfg_root}
     do

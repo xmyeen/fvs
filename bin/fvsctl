@@ -11,11 +11,27 @@ MODE_DEF="${MODE_OF_INSTALL}"
 DAEMON_NAME="${APP_NAME}d"
 DAEMON_SERVICE_CFG_PATH="/usr/lib/systemd/system/${DAEMON_NAME}.service"
 
+VENV_ROOT=""
 ENV_FILES=""
 
 ORIGIN_PROFILE_PATH="${CURR_SCRIPT_DIR}/../config/app.cfg"
 PROFILE_ROOT="/etc/sysconfig/${APP_NAME}"
 PROFILE_PATH="${PROFILE_ROOT}/app.cfg"
+
+if [ -n "${VIRTUAL_ENV}" ]
+then
+  VENV_ROOT="${VIRTUAL_ENV}"
+fi
+
+if [ -n "${VENV_ROOT}" ]
+then
+  CURR_ENV="${VENV_ROOT}"
+  REAL_ENV="`cat ${VENV_ROOT}/pyvenv.cfg | grep home | cut -d'=' -f2 | tr -s ' '`/.."
+  REAL_ENV="$(cd ${REAL_ENV}; pwd)"
+else
+  CURR_ENV="$(cd ${CURR_SCRIPT_DIR}/..; pwd)"
+  REAL_ENV="$(cd ${CURR_SCRIPT_DIR}/..; pwd)"
+fi
 
 show_usage(){
 cat <<EOF
@@ -25,8 +41,9 @@ Option:
   -h,--help               Print usage
   -i,--install            Install
   -u,--uninstall          Remove
-  -e,--env                Specify virtualenv profile  
-  -c,--cfg                Specify configuration profile
+  --venv=<venv home>      Specify virtual enviroment home
+  -e,--env=<path>         Specify enviroment profile  
+  -c,--cfg=<path>         Specify configuration profile
 EOF
 }
 
@@ -51,7 +68,10 @@ Wants=
 
 [Service]
 $(for e in ${ENV_FILES}; do echo "EnvironmentFile=$e"; done)
-ExecStart=${CURR_SCRIPT_DIR}/${APP_NAME} -c ${profile}
+Environment="LD_LIBRARY_PATH=${REAL_ENV}/lib:\${LD_LIBRARY_PATH}"
+Environment="PATH=${CURR_ENV}/bin:\${PATH}"
+WorkingDirectory=${CURR_ENV}
+ExecStart=${CURR_ENV}/bin/${APP_NAME} -c ${profile}
 ExecReload=/bin/kill -HUP $MAINPID
 Type=simple
 KillMode=process
@@ -66,7 +86,8 @@ if [ "0" != "$METHOD" ]
 then
     echo "Update ${DAEMON_NAME} ..."
     systemctl stop ${DAEMON_NAME}.service
-    systemctl reload ${DAEMON_NAME}.service
+    systemctl daemon-reload
+    # systemctl reload ${DAEMON_NAME}.service
     systemctl start ${DAEMON_NAME}.service
 else
     echo "Add ${DAEMON_NAME} ..."
@@ -91,7 +112,7 @@ then
 fi
 }
 
-OPTIONS=$(getopt -o hue:c: -al help,uninstall,env:,cfg: -n "$0 -h" -s sh -- "$@")
+OPTIONS=$(getopt -o hiue:c: -al help,install,uninstall,venv:,env:,cfg: -n "$0 -h" -s sh -- "$@")
 eval set -- "$OPTIONS"
 while [ -n "$1" ]
 do
@@ -108,12 +129,16 @@ do
       MODE_DEF="${MODE_OF_UNINSTALL}"
       shift
     ;;
-    -c|--cfg)
-      ORIGIN_PROFILE_PATH="$2"
+    --venv)
+      VENV_ROOT="$2"
       shift 2
     ;;
     -e|--env)
-      ENV_FILES="$2 ${ENV_FILES}"
+      ENV_FILES="${ENV_FILES} $2"
+      shift 2
+    ;;
+    -c|--cfg)
+      ORIGIN_PROFILE_PATH="$2"
       shift 2
     ;;
     --)

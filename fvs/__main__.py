@@ -33,7 +33,7 @@ except ImportError:
 
 origin_settings = dict(
     host = "0.0.0.0",
-    port = "36666",
+    port = "34433",
     external_address = None,
     config = os.path.join(sys.prefix, 'config', 'app.cfg'),
     exchange_dir = os.path.join(os.getcwd(), ".exch")
