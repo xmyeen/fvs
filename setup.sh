@@ -2,8 +2,7 @@
 
 PYTHON_CMD="python3"
 
-PIP_CMD="pip3"
-PIP_COMMAND_OPTS="-i http://mirrors.cloud.aliyuncs.com/pypi --trusted-host mirrors.cloud.aliyuncs.com -U"
+PIP_COMMAND_OPTS="-i https://mirrors.cloud.aliyuncs.com/pypi --trusted-host mirrors.cloud.aliyuncs.com -U"
 
 BUILD_ROOT=".build"
 DIST_ROOT=".dist"
@@ -20,9 +19,7 @@ mkdir -p ${DIST_ROOT} ${BUILD_ROOT}
 type ${PYTHON_CMD} >/dev/null 2>&1 || { echo >&2 "I require python3 but it's not installed.  Aborting."; exit 1; }
 if [ "$(python --version 2>&1 | cut -d' ' -f2 | cut -d'.' -f1)" == "3" ]; then PYTHON_CMD="python"; fi
 
-# 检查PIP命令
-type ${PIP_CMD} >/dev/null 2>&1 || { echo >&2 "I require pip3 but it's not installed.  Aborting."; exit 1; }
-${PIP_CMD} install ${PIP_COMMAND_OPTS} pip setuptools wheel
+${PYTHON_CMD} -m pip install ${PIP_COMMAND_OPTS} pip setuptools wheel
 
 build_readhat(){
 RPMBUILD_ROOT="${PWD}/.rpmbuild"

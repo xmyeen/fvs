@@ -65,7 +65,7 @@ fi
 
 echo "Install %{name}, now"
 
-${pycmd} -m venv --clean %{venv_root}
+${pycmd} -m venv --clear %{venv_root}
 source %{venv_root}/bin/activate
 pip install -U --force-reinstall --no-index --pre --find-links=%{rc_root} %{name}
 pip freeze > %{app_root}/reqirements.txt
