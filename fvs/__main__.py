@@ -150,8 +150,8 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             f.close()
 
     def do_POST(self):
-        r, info = self.deal_post_data()
-        print(r, info, "by: ", self.client_address)
+        r, info, dest = self.deal_post_data()
+        print(f"{info} - client({str(self.client_address)}),result({str(r)}),output({dest})")
         f = StringIO()
         f.write('<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 3.2 Final//EN">')
         f.write('<meta name="viewport" content="width=device-width" charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no">')
@@ -187,27 +187,27 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             return (False, "Content NOT begin with boundary")
         line = self.rfile.readline()
         remainbytes -= len(line)
-        fn = re.findall(
+        filename = re.findall(
             r'Content-Disposition.*name="file"; filename="(.*)"'.encode('utf-8'), line)
-        if not fn:
+        if not filename:
             return (False, "Can't find out file name...")
         path = str(self.translate_path(self.path)).encode('utf-8')
         osType = platform.system()
         try:
             if osType == "Linux":
-                fn = os.path.join(path, fn[0].decode('gbk').encode('utf-8'))
+                output_file = os.path.join(path, filename[0].decode('gbk').encode('utf-8'))
             else:
-                fn = os.path.join(path, fn[0])
+                output_file = os.path.join(path, filename[0])
         except Exception as e:
             return (False, "文件名请不要用中文，或者使用IE上传中文名的文件。{}" .format(e))
-        while os.path.exists(fn):
-            fn += "_".encode("utf-8")
+        while os.path.exists(output_file):
+            output_file += "_".encode("utf-8")
         line = self.rfile.readline()
         remainbytes -= len(line)
         line = self.rfile.readline()
         remainbytes -= len(line)
         try:
-            out = open(fn, 'wb')
+            of = open(output_file, 'wb')
         except IOError:
             return (False, "Can't create file to write, do you have permission to write?")
 
@@ -220,13 +220,13 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 preline = preline[0:-1]
                 if preline.endswith('\r'.encode("utf-8")):
                     preline = preline[0:-1]
-                out.write(preline)
-                out.close()
-                return (True, "文件 '%s' 上传成功" % fn)
+                of.write(preline)
+                of.close()
+                return (True, f"Upload '{filename}' successfully", output_file)
             else:
                 out.write(preline)
                 preline = line
-        return (False, "Unexpect Ends of data.")
+        return (False, "Unexpect ends of data.", None)
 
     def send_head(self):
         path = self.translate_path(self.path)
@@ -265,12 +265,13 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         return p
 
     def list_directory(self, path):
+        exchage_root = self.get_exchange_diretory()
         try:
-            list = os.listdir(path)
+            l = os.listdir(path)
         except os.error:
             self.send_error(404, "No permission to list directory")
             return None
-        list.sort(key=lambda a: a.lower())
+        l.sort(key=lambda a: a.lower())
         f = StringIO()
         displaypath = html.escape(urllib.parse.unquote(self.path))
         f.write('<!DOCTYPE html>')
@@ -287,7 +288,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         f.write("</form>\n")
         f.write(
             '<h2 style="color:#FF0000">请先选择完文件再点上传，不这样做的话可能会出现奇怪的情况</h2><hr>\n<ul>\n')
-        for name in list:
+        for name in l:
             fullname = os.path.join(path, name)
             colorName = displayname = linkname = name
             if os.path.isdir(fullname):
@@ -297,10 +298,13 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
             if os.path.islink(fullname):
                 colorName = '<span style="background-color: #FFBFFF;">' + name + '@</span>'
                 displayname = name
-            filename = os.path.join(self.get_exchange_diretory(), displayname)
+            # print('xx'*30, path, name, fullname)
+            
+            # filename = os.path.join(exchage_root, os.path.realpath(path, exchage_root), displayname)
+            # print('xx'*30, filename)
             f.write('<table><tr><td width="60%%"><a href="%s">%s</a></td><td width="20%%">%s</td><td width="20%%">%s</td></tr>\n'
                     % (urllib.parse.quote(linkname), colorName,
-                        Util.sizeof_fmt(os.path.getsize(filename)), Util.modification_date(filename)))
+                        Util.sizeof_fmt(os.path.getsize(fullname)), Util.modification_date(fullname)))
         f.write("</table>\n<hr>\n</body>\n</html>\n")
         length = f.tell()
         f.seek(0)
@@ -329,7 +333,6 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         shutil.copyfileobj(source, outputfile)
 
     def guess_type(self, path):
-
         base, ext = posixpath.splitext(path)
         if ext in self.extensions_map:
             return self.extensions_map[ext]
@@ -355,8 +358,9 @@ def show_usage():
     Launch file viewer server
 
     Options:
-      -c,--config=<path>  The configuration file
-      -v,--version        Show version
+      -c,--config=<path>        The configuration file
+      -w,--exchange-dir=<path>  The root directory for exchanging
+      -v,--version              Show version
     ''')
 
 def show_version():
@@ -376,8 +380,12 @@ def main():
             if opt in ('-v','--version'):
                 show_version()
                 sys.exit()
+            if opt in ('-w', '--exchange-dir'):
+                origin_settings.update(exchange_dir = optval)
             if opt in ('-c','--config'):
                 origin_settings.update(config = optval)
+
+            # -w,--exchange-dir
 
         if os.path.exists(origin_settings.get('config')):
             parser = configparser.ConfigParser()
