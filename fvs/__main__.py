@@ -224,7 +224,7 @@ class SimpleHTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                 of.close()
                 return (True, f"Upload '{filename}' successfully", output_file)
             else:
-                out.write(preline)
+                of.write(preline)
                 preline = line
         return (False, "Unexpect ends of data.", None)
 

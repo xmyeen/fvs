@@ -91,7 +91,7 @@ then
     systemctl start ${DAEMON_NAME}.service
 else
     echo "Add ${DAEMON_NAME} ..."
-    systemctl enable --now ${DAEMON_NAME}.service
+    systemctl enable ${DAEMON_NAME}.service
     systemctl start ${DAEMON_NAME}.service
 fi
 }
