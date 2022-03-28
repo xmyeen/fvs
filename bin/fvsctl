@@ -1,0 +1,154 @@
+#!/bin/sh
+
+CURR_SCRIPT_DIR="$(cd `dirname $0`; pwd)"
+
+APP_NAME="fvs"
+
+MODE_OF_INSTALL="0"
+MODE_OF_UNINSTALL="1"
+MODE_DEF="${MODE_OF_INSTALL}"
+
+DAEMON_NAME="${APP_NAME}d"
+DAEMON_SERVICE_CFG_PATH="/usr/lib/systemd/system/${DAEMON_NAME}.service"
+
+VENV_ROOT=""
+ENV_FILES=""
+
+ORIGIN_PROFILE_PATH="${CURR_SCRIPT_DIR}/../config/app.cfg"
+PROFILE_ROOT="/etc/sysconfig/${APP_NAME}"
+PROFILE_PATH="${PROFILE_ROOT}/app.cfg"
+
+if [ -n "${VIRTUAL_ENV}" ]
+then
+  VENV_ROOT="${VIRTUAL_ENV}"
+fi
+
+if [ -n "${VENV_ROOT}" ]
+then
+  CURR_ENV="${VENV_ROOT}"
+  REAL_ENV="`cat ${VENV_ROOT}/pyvenv.cfg | grep home | cut -d'=' -f2 | tr -s ' '`/.."
+  REAL_ENV="$(cd ${REAL_ENV}; pwd)"
+else
+  CURR_ENV="$(cd ${CURR_SCRIPT_DIR}/..; pwd)"
+  REAL_ENV="$(cd ${CURR_SCRIPT_DIR}/..; pwd)"
+fi
+
+show_usage(){
+cat <<EOF
+Usage:
+  $(basename $0)
+Option:
+  -h,--help               Print usage
+  -i,--install            Install
+  -u,--uninstall          Remove
+  --venv=<venv home>      Specify virtual enviroment home
+  -e,--env=<path>         Specify enviroment profile  
+  -c,--cfg=<path>         Specify configuration profile
+EOF
+}
+
+start_serve() {
+profile="${ORIGIN_PROFILE_PATH}"
+if [ -f "${ORIGIN_PROFILE_PATH}" ]&&[ ! -f "${PROFILE_PATH}" ]
+then
+  mkdir -p ${PROFILE_ROOT} &&
+  cp -f ${ORIGIN_PROFILE_PATH} ${PROFILE_ROOT} &&
+  profile="${PROFILE_PATH}"
+fi
+
+METHOD="$(systemctl list-unit-files | grep ${DAEMON_NAME} | wc -l)"
+
+echo "Start serve..."
+cat <<EOF >${DAEMON_SERVICE_CFG_PATH}
+[Unit]
+Description=File Viewer Server Daemon
+Documentation=
+After=network.target 
+Wants=
+
+[Service]
+$(for e in ${ENV_FILES}; do echo "EnvironmentFile=$e"; done)
+Environment="LD_LIBRARY_PATH=${REAL_ENV}/lib:\${LD_LIBRARY_PATH}"
+Environment="PATH=${CURR_ENV}/bin:\${PATH}"
+WorkingDirectory=${CURR_ENV}
+ExecStart=${CURR_ENV}/bin/${APP_NAME} -c ${profile}
+ExecReload=/bin/kill -HUP $MAINPID
+Type=simple
+KillMode=process
+Restart=on-failure
+RestartSec=60s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+if [ "0" != "$METHOD" ]
+then
+    echo "Update ${DAEMON_NAME} ..."
+    systemctl stop ${DAEMON_NAME}.service
+    systemctl daemon-reload
+    # systemctl reload ${DAEMON_NAME}.service
+    systemctl start ${DAEMON_NAME}.service
+else
+    echo "Add ${DAEMON_NAME} ..."
+    systemctl enable ${DAEMON_NAME}.service
+    systemctl start ${DAEMON_NAME}.service
+fi
+}
+
+stop_serve() {
+echo "Stop serve..."
+if [ "0" != "$(systemctl list-unit-files | grep ${DAEMON_NAME} | wc -l)" ]
+then
+    systemctl stop ${DAEMON_NAME}.service
+    systemctl disable ${DAEMON_NAME}.service
+
+    if [ -e ${DAEMON_SERVICE_CFG_PATH} ]
+    then
+        rm -f ${DAEMON_SERVICE_CFG_PATH}
+    fi
+
+    rm -rf ${PROFILE_ROOT}
+fi
+}
+
+OPTIONS=$(getopt -o hiue:c: -al help,install,uninstall,venv:,env:,cfg: -n "$0 -h" -s sh -- "$@")
+eval set -- "$OPTIONS"
+while [ -n "$1" ]
+do
+  case "$1" in
+    -h|--help)
+      show_usage
+      shift;exit 0
+    ;;
+    -i|--install)
+      MODE_DEF="${MODE_OF_INSTALL}"
+      shift
+    ;;
+    -u|--uninstall)
+      MODE_DEF="${MODE_OF_UNINSTALL}"
+      shift
+    ;;
+    --venv)
+      VENV_ROOT="$2"
+      shift 2
+    ;;
+    -e|--env)
+      ENV_FILES="${ENV_FILES} $2"
+      shift 2
+    ;;
+    -c|--cfg)
+      ORIGIN_PROFILE_PATH="$2"
+      shift 2
+    ;;
+    --)
+      shift
+    ;;
+    *) 
+      shift
+    ;;
+  esac 
+done
+
+if [ "$MODE_DEF" == "$MODE_OF_INSTALL" ]; then start_serve; fi
+if [ "$MODE_DEF" == "$MODE_OF_UNINSTALL" ]; then stop_serve; fi
